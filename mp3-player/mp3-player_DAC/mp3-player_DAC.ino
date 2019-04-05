@@ -357,18 +357,21 @@ void setup() {
 
 unsigned long previousMillis = 0;
 const long interval = 1000;
+bool displayOff = false;
 
 void loop() {
   if (GO.JOY_X.wasAxisPressed() == 2)
   {
     play('l');
-    drawTrackList();
+    if (!displayOff)
+      drawTrackList();
   }
 
   if (GO.JOY_X.wasAxisPressed() == 1)
   {
     play('r');
-    drawTrackList();
+    if (!displayOff)
+      drawTrackList();
   }
 
   if (GO.BtnA.wasPressed())
@@ -385,7 +388,8 @@ void loop() {
     else
       gain = 1;
     out->SetGain(gain);
-    drawTrackList();
+    if (!displayOff)
+      drawTrackList();
   }
 
   if (GO.JOY_Y.isAxisPressed() == 1)
@@ -395,7 +399,8 @@ void loop() {
     else
       gain = 0.01;
     out->SetGain(gain);
-    drawTrackList();
+    if (!displayOff)
+      drawTrackList();
   }
 
   if (GO.BtnVolume.wasPressed())
@@ -408,7 +413,18 @@ void loop() {
     else {
       out->SetGain(gain);
     }
-    drawTrackList();
+    if (!displayOff)
+      drawTrackList();
+  }
+
+  if (GO.BtnMenu.wasPressed())
+  {
+    displayOff = !displayOff;
+    if (displayOff) {
+      GO.lcd.setBrightness(0);
+    } else {
+      GO.lcd.setBrightness(255);
+    }
   }
 
 
@@ -421,28 +437,32 @@ void loop() {
         mp3->stop();
         playing = false;
         play('r');
-        drawTrackList();
+        if (!displayOff)
+          drawTrackList();
       }
     }
     else
     {
       delay(1000);
     }
-    genSpectrum();
-    drawTimeline();
+    if (!displayOff) {
+      genSpectrum();
+      drawTimeline();
+    }
   }
 
-  unsigned long currentMillis = millis();
+  if (!displayOff) {
+    unsigned long currentMillis = millis();
 
-  if (currentMillis - previousMillis >= interval) {
-    // save the last time you blinked the LED
-    previousMillis = currentMillis;
-    GO.lcd.fillRect(280, 0, 40, 30, WHITE);
-    GO.lcd.setCursor(280, 0);
-    GO.lcd.setTextSize(2);
-    GO.lcd.print(GO.battery.getPercentage());
-    GO.lcd.print("%");
+    if (currentMillis - previousMillis >= interval) {
+      // save the last time you blinked the LED
+      previousMillis = currentMillis;
+      GO.lcd.fillRect(280, 0, 40, 30, WHITE);
+      GO.lcd.setCursor(280, 0);
+      GO.lcd.setTextSize(2);
+      GO.lcd.print(GO.battery.getPercentage());
+      GO.lcd.print("%");
+    }
   }
-
   GO.update();
 }
