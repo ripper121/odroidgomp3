@@ -16,7 +16,7 @@ struct Track
 Track *trackList;
 bool playing = true, mute = false;
 unsigned long currentMillis;
-float gain = 0.1;
+float gain = 0.1, oldGain = 0;
 
 extern unsigned char timer_logo[];
 extern unsigned char insertsd_logo[];
@@ -127,6 +127,8 @@ bool createTrackList(String dir) {
 }
 
 bool play(char dir) {
+  Serial.println("play()");
+  Serial.println(trackList->label);
   switch (dir)
   {
     case 'r':
@@ -146,13 +148,19 @@ bool play(char dir) {
       mp3 = NULL;
       file = NULL;
       out = NULL;
-      file = new AudioFileSourceSD("/");
-      id3 = new AudioFileSourceID3(file);
-      out = new AudioOutputI2S(0, 0, 6, 0);
-      out->SetGain(gain);
-      mp3 = new AudioGeneratorMP3();
-      mp3->begin(id3, out);
-      playing = false;
+      if (SD.exists(trackList->label)) {
+        file = new AudioFileSourceSD(strToChar(trackList->label));
+        id3 = new AudioFileSourceID3(file);
+        id3->seek(trackList->timePos, 1);
+        out = new AudioOutputI2S(0, 0, 6, 0);
+        out->SetGain(gain);
+        mp3 = new AudioGeneratorMP3();
+        playing = false;
+        mp3->begin(id3, out);
+      } else {
+        Serial.println("not found");
+        return false;
+      }
       return true;
     default:
       if (playing)
@@ -164,15 +172,25 @@ bool play(char dir) {
       break;
   }
   drawCover();
-  file = new AudioFileSourceSD(strToChar(trackList->label));
-  id3 = new AudioFileSourceID3(file);
-  id3->seek(trackList->timePos, 1);
-  out = new AudioOutputI2S(0, 0, 6, 0);
-  out->SetGain(gain);
-  mp3 = new AudioGeneratorMP3();
-  playing = true;
-  mp3->begin(id3, out);
-
+  delete file;
+  delete out;
+  delete mp3;
+  mp3 = NULL;
+  file = NULL;
+  out = NULL;
+  if (SD.exists(trackList->label)) {
+    file = new AudioFileSourceSD(strToChar(trackList->label));
+    id3 = new AudioFileSourceID3(file);
+    id3->seek(trackList->timePos, 1);
+    out = new AudioOutputI2S(0, 0, 6, 0);
+    out->SetGain(gain);
+    mp3 = new AudioGeneratorMP3();
+    playing = true;
+    mp3->begin(id3, out);
+  } else {
+    Serial.println("not found");
+    return false;
+  }
   return true;
 }
 
@@ -188,7 +206,15 @@ void genSpectrum() {
 }
 
 void drawCover() {
-  GO.lcd.drawJpgFile(SD, strToChar(trackList->label + ".jpg"), 30, 15, 75, 75);
+  Serial.println("drawCover()");
+  Serial.println(trackList->label + ".jpg");
+  if (SD.exists(trackList->label + ".jpg")) {
+    Serial.println("exists");
+    GO.lcd.drawJpgFile(SD, strToChar(trackList->label + ".jpg"), 30, 15, 75, 75);
+  } else {
+    GO.lcd.fillRect(30, 15, 75, 75, 0xffff);
+    Serial.println("not found");
+  }
 }
 
 unsigned long drawTimeline_previousMillis = 0;
@@ -247,6 +273,11 @@ void drawSpectrum(int a, int b, int c, int d) { // %
 }
 
 void drawTrackList() {
+  Serial.println("drawTrackList()");
+  Serial.println((trackList->left)->label);
+  Serial.println(trackList->label);
+  Serial.println((trackList->right)->label);
+
   GO.lcd.fillRect(0, 130, 320, 75, 0xffff);
   if (trackList->left != trackList)
   {
@@ -254,6 +285,7 @@ void drawTrackList() {
     GO.lcd.setTextColor(0x7bef);
     GO.lcd.setCursor(10, 130);
     String label = ((trackList->left)->label).substring(1, posChar(((trackList->left)->label), '.'));
+    label.replace("mp3/", "");
     if (((trackList->left)->label).length() > 24) label = label.substring(0, 24) + ".";
     GO.lcd.print(label);
   }
@@ -262,8 +294,10 @@ void drawTrackList() {
   GO.lcd.setTextColor(0x0000);
   GO.lcd.setCursor(10, 155);
   String label = (trackList->label).substring(1, posChar((trackList->label), '.'));
+  label.replace("mp3/", "");
   if ((trackList->label).length() > 16) label = label.substring(0, 16) + ".";
   GO.lcd.print(label);
+
 
   if (trackList->right != trackList)
   {
@@ -271,12 +305,15 @@ void drawTrackList() {
     GO.lcd.setTextColor(0x7bef);
     GO.lcd.setCursor(10, 185);
     String label = ((trackList->right)->label).substring(1, posChar(((trackList->right)->label), '.'));
+    label.replace("mp3/", "");
     if (((trackList->right)->label).length() > 24) label = label.substring(0, 24) + ".";
     GO.lcd.print(label);
   }
 
   GO.lcd.fillRect(10, 220, 200, 30, WHITE);
   GO.lcd.setCursor(10, 220);
+  GO.lcd.setTextSize(2);
+  GO.lcd.setTextColor(0x7bef);
   if (mute) {
     GO.lcd.print("Mute");
   } else {
@@ -290,7 +327,7 @@ void drawGUI() {
   GO.lcd.fillRect(0, 0, 320, 240, 0xffff);
   GO.lcd.setCursor(0, 0);
   GO.lcd.setTextColor(0x7bef);
-  GO.lcd.print("\n\n MP3 Player for ODROID-GO\n       by Ripper121");
+  GO.lcd.print("\n\n MP3 Player for ODROID-GO\n       by Ripper121\n\n       DAC-Version");
   drawTrackList();
   while (true)
   {
@@ -334,7 +371,7 @@ void setup() {
     GO.lcd.print(" BUTTON");
     while (true);
   }
-  if (!createTrackList("/"))
+  if (!createTrackList("/mp3"))
   {
     GO.lcd.fillRoundRect(0, 0, 320, 240, 7, 0xffff);
     GO.lcd.drawBitmap(30, 75, 59, 59, (uint16_t *)error_logo);
@@ -360,63 +397,68 @@ const long interval = 1000;
 bool displayOff = false;
 
 void loop() {
-  if (GO.JOY_X.wasAxisPressed() == 2)
-  {
-    play('l');
-    if (!displayOff)
-      drawTrackList();
-  }
-
-  if (GO.JOY_X.wasAxisPressed() == 1)
-  {
-    play('r');
-    if (!displayOff)
-      drawTrackList();
-  }
-
-  if (GO.BtnA.wasPressed())
-  {
-    play('t');
-  }
-
-
-
-  if (GO.JOY_Y.isAxisPressed() == 2)
-  {
-    if (gain <= 0.99)
-      gain += 0.01;
-    else
-      gain = 1;
-    out->SetGain(gain);
-    if (!displayOff)
-      drawTrackList();
-  }
-
-  if (GO.JOY_Y.isAxisPressed() == 1)
-  {
-    if (gain >= 0.01)
-      gain -= 0.01;
-    else
-      gain = 0.01;
-    out->SetGain(gain);
-    if (!displayOff)
-      drawTrackList();
-  }
-
-  if (GO.BtnVolume.wasPressed())
-  {
-    mute = !mute;
-    if (mute) {
-      out->SetGain(0);
-
+  if (!displayOff) {
+    if (GO.JOY_X.wasAxisPressed() == 2)
+    {
+      play('l');
+      if (!displayOff)
+        drawTrackList();
     }
-    else {
+
+    if (GO.JOY_X.wasAxisPressed() == 1)
+    {
+      play('r');
+      if (!displayOff)
+        drawTrackList();
+    }
+
+    if (GO.BtnA.wasPressed())
+    {
+      play('t');
+    }
+
+
+
+    if (GO.JOY_Y.isAxisPressed() == 2)
+    {
+      if (gain <= 0.99)
+        gain += 0.01;
+      else
+        gain = 1;
+      out->SetGain(gain);
+      if (!displayOff)
+        drawTrackList();
+    }
+
+    if (GO.JOY_Y.isAxisPressed() == 1)
+    {
+      if (gain >= 0.01)
+        gain -= 0.01;
+      else
+        gain = 0.01;
+      out->SetGain(gain);
+      if (!displayOff)
+        drawTrackList();
+    }
+
+    if (GO.BtnVolume.wasPressed())
+    {
+      mute = !mute;
+
+      if (mute) {
+        oldGain = gain;
+        gain = 0;
+      }
+      else {
+        gain = oldGain;
+      }
+      if (!displayOff)
+        drawTrackList();
+
       out->SetGain(gain);
     }
-    if (!displayOff)
-      drawTrackList();
   }
-
+  
   if (GO.BtnMenu.wasPressed())
   {
     displayOff = !displayOff;
@@ -457,8 +499,8 @@ void loop() {
     if (currentMillis - previousMillis >= interval) {
       // save the last time you blinked the LED
       previousMillis = currentMillis;
-      GO.lcd.fillRect(280, 0, 40, 30, WHITE);
-      GO.lcd.setCursor(280, 0);
+      GO.lcd.fillRect(270, 0, 50, 30, WHITE);
+      GO.lcd.setCursor(270, 0);
       GO.lcd.setTextSize(2);
       GO.lcd.print(GO.battery.getPercentage());
       GO.lcd.print("%");
